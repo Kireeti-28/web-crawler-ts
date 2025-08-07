@@ -10,7 +10,7 @@ export function normalizeURL(url: string) {
 }
 
 export function getURLsFromHTML(html: string, baseURL: string) {
-  const urls = [];
+  const urls: string[] = [];
   const dom = new JSDOM(html);
   const anchors = dom.window.document.querySelectorAll("a");
 
@@ -31,7 +31,6 @@ export function getURLsFromHTML(html: string, baseURL: string) {
 }
 
 export async function getHTML(url: string) {
-  console.log(`crawling ${url}`);
 
   let res;
   try {
@@ -41,15 +40,53 @@ export async function getHTML(url: string) {
   }
 
   if (res.status > 399) {
-    console.log(`Got HTTP error: ${res.status} ${res.statusText}`);
-    return;
+    throw new Error(`Got HTTP error: ${res.status} ${res.statusText}`)
   }
 
   const contentType = res.headers.get("content-type");
   if (!contentType || !contentType.includes("text/html")) {
-    console.log(`Got non-HTML response: ${contentType}`);
-    return;
+    throw new Error(`Got non-HTML response: ${contentType}`)
   }
 
-  console.log(await res.text());
+  const respBody = await res.text();
+  return respBody;
+}
+
+function hasSameDomain(baseURL: string, currentURL: string) {
+  const baseURLObj = new URL(baseURL);
+  const currentURLObj = new URL(currentURL);
+
+  return baseURLObj.hostname === currentURLObj.hostname;
+}
+
+export async function crawlPage(baseURL: string, currentURL: string = baseURL, pages: Record<string, number> = {}) {
+  if (!hasSameDomain(baseURL, currentURL)) return pages;
+
+  const normalizedURL = normalizeURL(currentURL);
+  if (normalizedURL in pages) {
+    pages[normalizedURL]++;
+    return pages;
+  }
+
+  pages[normalizedURL] = 1;
+
+  console.log(`crawling ${currentURL}`);
+  let html = ""
+  try {
+    html = await getHTML(currentURL);
+  } catch (err) {
+    console.log(`${(err as Error).message}`);
+    return pages;
+  }
+
+  const nxtUrls = getURLsFromHTML(html, baseURL);
+  for (let nxtUrl of nxtUrls) {
+    if (nxtUrl in pages) {
+      continue;
+    }
+
+    crawlPage(baseURL, nxtUrl, pages);
+  }
+
+  return pages;
 }
